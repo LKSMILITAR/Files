@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LKS MILITAR | Line-of-Sight & Radar Horizon</title>
+    <style>
+        :root {
+            --bg-color: #0d0f12;
+            --panel-color: #161a20;
+            --accent-color: #00ff66;
+            --text-color: #e2e8f0;
+            --muted-color: #64748b;
+            --alert-color: #ff3333;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--panel-color);
+            border: 1px solid #242b35;
+            border-radius: 8px;
+            padding: 25px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            letter-spacing: 1px;
+            margin-top: 0;
+            color: var(--accent-color);
+            border-bottom: 1px solid #242b35;
+            padding-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--muted-color);
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+
+        select, input[type="range"] {
+            width: 100%;
+            background: #1f242d;
+            border: 1px solid #242b35;
+            color: var(--text-color);
+            padding: 8px;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .value-display {
+            font-weight: bold;
+            color: var(--text-color);
+            float: right;
+        }
+
+        .results-panel {
+            background: #0d0f12;
+            border-left: 3px solid var(--accent-color);
+            padding: 15px;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .result-item {
+            margin-bottom: 12px;
+        }
+
+        .result-item:last-child { margin-bottom: 0; }
+
+        .result-label {
+            font-size: 0.8rem;
+            color: var(--muted-color);
+            text-transform: uppercase;
+        }
+
+        .result-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>▲ LKS MILITAR | ANALISADOR DE VISADA CIENTÍFICA</h1>
+    
+    <div class="grid">
+        <div class="controls">
+            <div class="control-group">
+                <label for="meio">Modelo de Propagação (Física)</label>
+                <select id="meio" oninput="atualizarCalculos()">
+                    <option value="optica">Óptica Atmosférica Corrigida (MDPI k=0.14)</option>
+                    <option value="radar">Horizonte de Radar Efetivo (Banda X/L k=0.25)</option>
+                    <option value="geometrica_pura">Geometria Pura (Vácuo Teórico k=0.0)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="h0">Altura do Sensor (h0): <span id="h0-val" class="value-display">10</span> m</label>
+                <input type="range" id="h0" min="1" max="100" value="10" step="0.5" oninput="atualizarCalculos()">
+            </div>
+
+            <div class="control-group">
+                <label for="h1">Altura do Alvo (h1): <span id="h1-val" class="value-display">2</span> m</label>
+                <input type="range" id="h1" min="0.5" max="30" value="2" step="0.1" oninput="atualizarCalculos()">
+            </div>
+
+            <div class="control-group">
+                <label for="distancia">Distância Operacional: <span id="distancia-val" class="value-display">20</span> km</label>
+                <input type="range" id="distancia" min="1" max="150" value="20" step="0.5" oninput="autalizarDistanciaSlider()">
+            </div>
+        </div>
+
+        <div class="results-panel">
+            <div class="result-item">
+                <div class="result-label">Horizonte Visual do Sensor (d0)</div>
+                <div id="res-d0" class="result-value">0.00 km</div>
+            </div>
+            <div class="result-item">
+                <div class="result-label">Linha de Visada Máxima Efetiva</div>
+                <div id="res-visada-max" class="result-value" style="color: var(--accent-color);">0.00 km</div>
+            </div>
+            <div class="result-item">
+                <div class="result-label">Porção Ocultada do Alvo</div>
+                <div id="res-ocultada" class="result-value">0.00 m</div>
+            </div>
+            <div class="result-item">
+                <div class="result-label">Condição de Intercepção</div>
+                <div id="res-status" class="status-badge">---</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function autalizarDistanciaSlider() {
+    atualizarCalculos();
+}
+
+function atualizarCalculos() {
+    // 1. Capturar os elementos e valores atuais da tela
+    const meio = document.getElementById("meio").value;
+    const h0 = parseFloat(document.getElementById("h0").value);
+    const h1 = parseFloat(document.getElementById("h1").value);
+    const d0_req = parseFloat(document.getElementById("distancia").value);
+
+    // Atualizar os displays numéricos ao lado dos labels
+    document.getElementById("h0-val").innerText = h0;
+    document.getElementById("h1-val").innerText = h1;
+    document.getElementById("distancia-val").innerText = d0_req;
+
+    // 2. Definir a Física do Meio com base no fator de refração (k)
+    const R_real = 6371.0; 
+    let k = 0.14; // Padrão MDPI óptico
+
+    if (meio === "geometrica_pura") k = 0.0;
+    if (meio === "radar") k = 0.25; // Fator 4/3
+
+    const R_efetivo = R_real / (1.0 - k);
+
+    // 3. Executar o Motor Matemático
+    const d0_horizonte_sensor = Math.sqrt(2 * R_efetivo * (h0 / 1000.0));
+    const d1_horizonte_alvo = Math.sqrt(2 * R_efetivo * (h1 / 1000.0));
+    const visada_maxima = d0_horizonte_sensor + d1_horizonte_alvo;
+
+    let queda_m = 0.0;
+    let status_texto = "";
+    let status_cor = "#00ff66";
+    let texto_cor = "#0d0f12";
+
+    if (d0_req <= d0_horizonte_sensor) {
+        queda_m = 0.0;
+        status_texto = "LINHA DE VISADA DIRETA COM A BASE";
+    } else {
+        const d_restante = d0_req - d0_horizonte_sensor;
+        const queda_km = Math.sqrt(Math.pow(R_efetivo, 2) + Math.pow(d_restante, 2)) - R_efetivo;
+        queda_m = queda_km * 1000.0;
+
+        if (queda_m >= h1) {
+            status_texto = "ALVO TOTALMENTE ENCOBERTO (Sombra)";
+            status_cor = "#ff3333";
+            texto_cor = "#ffffff";
+        } else {
+            const exposto = h1 - queda_m;
+            status_texto = `SILHUETA PARCIALMENTE EXPOSTA (${exposto.toFixed(2)}m)`;
+            status_cor = "#ffaa00";
+        }
+    }
+
+    // 4. Injetar os resultados de volta na interface
+    document.getElementById("res-d0").innerText = `${d0_horizonte_sensor.toFixed(2)} km`;
+    document.getElementById("res-visada-max").innerText = `${visada_maxima.toFixed(2)} km`;
+    document.getElementById("res-ocultada").innerText = `${queda_m.toFixed(2)} metros`;
+    
+    const badge = document.getElementById("res-status");
+    badge.innerText = status_texto;
+    badge.style.backgroundColor = status_cor;
+    badge.style.color = texto_cor;
+}
+
+// Inicializa a primeira execução ao carregar a página
+atualizarCalculos();
+</script>
+
+</body>
+</html>
